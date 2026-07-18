@@ -43,13 +43,15 @@ opt.eval()
 
 I tune learning rates for all optimizers for a fair comparison, and also run for a relatively large number of steps, so running benchmarks takes a while, so to keep times realistic I benchmark on 3 tiny models - MLP, RNN and ConvNet. It beats all other opts on MLP and RNN with `shampoo_beta=0.95`, and RNN and ConvNet with `shampoo_beta=0`. Though with `shampoo_beta=0` it's clearly unstable as seen by the jagged learning rate search curve.
 
-BENCH 1
-BENCH 2
-BENCH 3
+<img width="3520" height="835" alt="image" src="https://github.com/user-attachments/assets/36d1351b-6b6b-4790-900c-06f2b9f81586" />
+
+<img width="3486" height="839" alt="image" src="https://github.com/user-attachments/assets/1de47c15-101c-4ab6-bc1a-3fbe749a2437" />
+
+<img width="3486" height="832" alt="image" src="https://github.com/user-attachments/assets/ca8c2870-a397-4d0a-92a7-59bc425cf5d6" />
 
 The curves look weird, that's because this is a weird optimizer. Taking the reciprocal makes it go along the walls of the valley, rather than along the floor. Look at the way it minimizes nesterov's piecewise rosenbrock (which is btw a hard function and many opts fail to minimize it):
 
-PIC
+<img width="1560" height="1392" alt="image" src="https://github.com/user-attachments/assets/583e8fe2-3615-49ad-a470-98751eee65cd" />
 
 **Note: it might not scale to bigger models. Its a weird optimizer and it's unpredictable what would happen with other models. I might test when I'm not too lazy.**
 
