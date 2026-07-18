@@ -41,7 +41,7 @@ opt.eval()
 
 ## Benchmarks
 
-I tune learning rates for all optimizers for a fair comparison, and also run for a relatively large number of steps, so running benchmarks takes a while, so to keep times realistic I benchmark on 3 tiny models - MLP, RNN and ConvNet. It beats all other opts on MLP and RNN with `shampoo_beta=0.95`, and RNN and ConvNet with `shampoo_beta=0`. Though with `shampoo_beta=0` it's clearly unstable as seen by the jagged learning rate search curve.
+I tune learning rates for all optimizers for a fair comparison, and also run for a relatively large number of steps, so running benchmarks takes a while, so to keep times realistic I benchmark on mini-batch training of 3 tiny mnist1d models - MLP, RNN and ConvNet. It beats all other opts on MLP and RNN with `shampoo_beta=0.95`, and RNN and ConvNet with `shampoo_beta=0`. Though with `shampoo_beta=0` it's clearly unstable as seen by the jagged learning rate search curve.
 
 <img width="3520" height="835" alt="image" src="https://github.com/user-attachments/assets/36d1351b-6b6b-4790-900c-06f2b9f81586" />
 
