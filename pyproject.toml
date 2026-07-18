@@ -1,0 +1,44 @@
+# NEW VERSION TUTORIAL FOR MYSELF
+# STEP 1 - COMMIT NEW CHANGES AND PUSH THEM
+# STEP 2 - BUMP VERSION AND COMMIT IT (DONT PUSH!!!!)
+# STEP 3 - CREATE TAG WITH THAT VERSION
+# STEP 4 - PUSH (SYNC) CHANGES
+# STEP 5 - PUSH TAG
+
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torchalgos"
+description = "Currently SOAP and SPlus"
+
+version = "1.0.0"
+dependencies = [
+  "torch",
+  "numpy",
+]
+requires-python = ">= 3.12"
+readme = "README.md"
+authors = [
+  {name = "Ivan Nikishev", email = "nkshv2@gmail.com"},
+]
+license = {file = "LICENSE"}
+keywords = ["solvers", "optimization", "optimizers", "torch"]
+
+
+[project.urls]
+Homepage = "https://github.com/inikishev/torchalgos"
+Repository = "https://github.com/inikishev/torchalgos"
+Issues = "https://github.com/inikishev/torchalgos/isses"
+
+# [tool.setuptools]
+# package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
+
+[tool.setuptools.packages]
+find = {}  # Scanning implicit namespaces is active by default
