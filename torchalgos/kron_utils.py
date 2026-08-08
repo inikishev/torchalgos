@@ -83,16 +83,20 @@ def make_kron_param_groups_for_emb(model: torch.nn.Module):
     # set embeddings to use diagonal preconditioner
     kron_params = []
     diag_params = []
+    seen = set()
 
     for module in model.modules():
-        if isinstance(module, (torch.nn.Embedding, torch.nn.EmbeddingBag)):
-            diag_params.extend(module.parameters(recurse=False))
-        else:
-            kron_params.extend(module.parameters(recurse=False))
+        for p in module.parameters(recurse=False):
+            if id(p) not in seen:
+                seen.add(id(p))
+                if isinstance(module, (torch.nn.Embedding, torch.nn.EmbeddingBag)):
+                    diag_params.append(p)
+                else:
+                    kron_params.append(p)
 
     params = [
-        {'params': kron_params},
-        {'params': diag_params, "precond_dims": None},
+        {"params": kron_params},
+        {"params": diag_params, "precond_dims": None},
     ]
 
     return [d for d in params if len(d["params"]) > 0]

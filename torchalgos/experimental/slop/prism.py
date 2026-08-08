@@ -5,7 +5,7 @@ from typing import Literal
 import torch
 from torch.optim import Optimizer
 
-from .. import kron_utils, opt_utils, soap
+from torchalgos import kron_utils, opt_utils, soap
 
 
 class Prism(Optimizer):

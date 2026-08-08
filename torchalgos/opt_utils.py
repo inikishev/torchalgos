@@ -1,22 +1,27 @@
+import math
 from typing import Literal
 
 import torch
 from torch.optim import Optimizer
 
 
-def _compute_metric(tensors: list[torch.Tensor], metric: float | Literal["mad"]):
+def _compute_metric(tensors: list[torch.Tensor], metric: float | Literal["mad","rms"]):
     if isinstance(metric, (int, float)):
         return torch._foreach_norm(tensors, ord=metric)
     if metric == "mad":
         return [t.mean() for t in torch._foreach_abs(tensors)]
-
+    if metric == "rms":
+        return [
+            t.norm() / math.sqrt(max(1, t.numel()))
+            for t in tensors
+        ]
     raise ValueError(metric)
 
 def graft_to_update_ema_(
     self: Optimizer,
     params_with_grad: list[torch.Tensor],
     updates_: list[torch.Tensor],
-    metric: float | Literal["mad"],
+    metric: float | Literal["mad", "rms"],
     beta: float,
     max_metric_growth: float | None,
     min_metric: float,

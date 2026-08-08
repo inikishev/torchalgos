@@ -5,7 +5,7 @@ from typing import Literal
 import torch
 from torch.optim import Optimizer
 
-from .. import kron_utils, soap, opt_utils
+from torchalgos import kron_utils, soap, opt_utils
 
 
 class KOMO(Optimizer):
