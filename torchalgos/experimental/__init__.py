@@ -6,7 +6,7 @@ from .orthopulse import OrthoPulseG
 from .projected_ema import AlternatingEMAs, OrthoProjectedEMA, ProjectedEMA
 from .qsoap import QSOAP
 from .random_soap import FixedRandomSOAP
-from .resplus import ReSPlus
+from .replus import RePlus
 from .soapcma import SOAPCMA
 from .top_sign import TopSign
 from .wsmuon import WSMuon

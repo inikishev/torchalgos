@@ -43,6 +43,7 @@ class CustomSOAP(Optimizer):
         reduce: Callable[[torch.Tensor, int], torch.Tensor] = torch.sum,
         copysign: bool = False,
         update_fn: Callable[[torch.Tensor, torch.Tensor, float], torch.Tensor] = torch.lerp,
+        symmetrize: bool = False,
         betas = (0.95, 0.95),
         shampoo_beta: float = -1,
         eps: float = 1e-8,
@@ -70,6 +71,7 @@ class CustomSOAP(Optimizer):
             reduce = reduce,
             copysign = copysign,
             update_fn = update_fn,
+            symmetrize = symmetrize,
             betas = betas,
             shampoo_beta = shampoo_beta,
             eps = eps,
@@ -210,12 +212,17 @@ class CustomSOAP(Optimizer):
 
                 # ------------------------------- update basis ------------------------------- #
                 if state["step"] % group["precond_freq"] == 0:
+
+                    accumulators = state["accumulators"]
+                    if group["symmetrize"]:
+                        accumulators = [(acc + acc.T) / 2 for acc in accumulators]
+
                     state["Qs"], (state["exp_avg"],), (state["exp_avg_sq"],) = soap.update_eigenbasis(
-                        power_iters=group["power_iters"],
-                        accumulators=state["accumulators"],
-                        Qs=state["Qs"],
-                        grads=(state["exp_avg"],),
-                        diags=(state["exp_avg_sq"],),
+                        power_iters = group["power_iters"],
+                        accumulators = accumulators,
+                        Qs = state["Qs"],
+                        grads = (state["exp_avg"],),
+                        diags = (state["exp_avg_sq"],),
                         solver = group["solver"],
                     )
 
@@ -235,7 +242,7 @@ class CustomSOAP(Optimizer):
                     eps=group["eps"],
                     mode=group["gtue_mode"],
                 )
-                
+
             # ----------------------------- update parameters ---------------------------- #
             if group["weight_decay"] > 0.0:
                 torch._foreach_add_(
@@ -244,7 +251,7 @@ class CustomSOAP(Optimizer):
 
             torch._foreach_mul_(updates, lrs)
             torch._foreach_sub_(group["params"], updates)
-            
+
             if group["ema_rate"] != 0:
                 opt_utils.update_parameter_ema(self, group=group)
 

@@ -6,7 +6,7 @@ from torch.optim import Optimizer
 from torchalgos import kron_utils, soap, opt_utils
 
 
-class ReSPlus(Optimizer):
+class RePlus(Optimizer):
     """SPlus but uses reciprocal of shifted and clipped gradient instead of sign.
 
     Recommended hyperparams:

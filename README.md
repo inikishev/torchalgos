@@ -1,6 +1,6 @@
-# ReSPlus
+# RePlus
 
-ReSPlus is SPlus but uses reciprocal instead of sign, and tracks cautious momentum in projected space.
+RePlus is SPlus but uses reciprocal instead of sign, and tracks cautious momentum in projected space.
 
 Here is what it does.
 
@@ -9,14 +9,14 @@ Here is what it does.
 3. takes that EMA, clips magnitudes to (0.01, 10), and takes their reciprocals;
 4. unprojects resulting update;
 5. tracks EMA of resulting updates, the update is grafted to that EMA for stability. This prevents the update from changing norm quickly.
-6. tracks EMA of model weights. This always improves test loss in my experiments, though ReSPlus also outperforms SPlus when weight EMA is disabled in both.
+6. tracks EMA of model weights. This always improves test loss in my experiments, though RePlus also outperforms SPlus when weight EMA is disabled in both.
 
 ## Usage example
 
 ```py
-from torchalgos.experimental import ReSPlus
+from torchalgos.experimental import RePlus
 
-opt = ReSPlus(
+opt = RePlus(
     # you can pass `model.parameters()`
     # but pass `model` to automatically disable preconditioning for embeddings
     model,
@@ -25,7 +25,7 @@ opt = ReSPlus(
 )
 
 model.train()
-opt.train() # this is important for ReSPlus, it switches between train params and weight EMAs
+opt.train() # this is important for RePlus, it switches between train params and weight EMAs
 
 for inputs, targets in dl_train:
     preds = model(inputs)

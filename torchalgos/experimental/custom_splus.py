@@ -16,6 +16,7 @@ class CustomSPlus(Optimizer):
         operation: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = torch.mul,
         reduce: Callable[[torch.Tensor, int], torch.Tensor] = torch.sum,
         copysign: bool = False,
+        symmetrize: bool = False,
         update_fn: Callable[[torch.Tensor, torch.Tensor, float], torch.Tensor] = torch.lerp,
         beta_unproj: float = 0.9,
         beta_proj: float = 0,
@@ -42,6 +43,7 @@ class CustomSPlus(Optimizer):
             reduce = reduce,
             copysign = copysign,
             update_fn = update_fn,
+            symmetrize = symmetrize,
             beta_unproj = beta_unproj,
             beta_proj = beta_proj,
             beta_update = beta_update,
@@ -193,9 +195,14 @@ class CustomSPlus(Optimizer):
 
                 # ------------------------------- update basis ------------------------------- #
                 if state["step"] % group["precond_freq"] == 0:
+
+                    accumulators = state["accumulators"]
+                    if group["symmetrize"]:
+                        accumulators = [(acc + acc.T) / 2 for acc in accumulators]
+
                     state["Qs"], diags, _ = soap.update_eigenbasis(
                         power_iters = group["power_iters"],
-                        accumulators = state["accumulators"],
+                        accumulators = accumulators,
                         Qs = state["Qs"],
                         grads = (state["exp_avg"], ) if "exp_avg" in state else (),
                         diags =  (state["exp_avg_sq"], ) if "exp_avg_sq" in state else (),
