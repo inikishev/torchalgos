@@ -66,3 +66,9 @@ I suspect that it works well because it goes all over the place which somehow ac
 This also implements other optimizers implemented here, SOAP and SPlus are very good implementations and thoroughly tested by way of me always using them when I train models. Feel free to use them.
 
 There are also a whole bunch of my other experiments and most of them suck so you probably shouldn't use them.
+
+# References
+
+- soap https://arxiv.org/abs/2409.11321
+- splus https://arxiv.org/abs/2506.07254
+- pogo https://arxiv.org/html/2602.14656v2, https://github.com/adrianjav/pogo (we use code from this repo for pogo update formula)
