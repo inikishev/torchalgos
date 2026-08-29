@@ -7,15 +7,20 @@ def make_muon_param_groups(params):
     if isinstance(params, torch.nn.Module):
         adam_params = []
         muon_params = []
+        seen = set()
+
         for module in params.modules():
-            if isinstance(module, (torch.nn.Embedding, torch.nn.EmbeddingBag)):
-                adam_params.extend(module.parameters(recurse=False))
-            else:
-                for p in module.parameters(recurse=False):
-                    if p.ndim <= 1:
+            for p in module.parameters(recurse=False):
+                if id(p) not in seen:
+                    seen.add(id(p))
+                    if isinstance(module, (torch.nn.Embedding, torch.nn.EmbeddingBag)):
                         adam_params.append(p)
                     else:
-                        muon_params.append(p)
+                        if p.ndim <= 1:
+                            adam_params.append(p)
+                        else:
+                            muon_params.append(p)
+
         params_groups = [
             {"params": muon_params, "use_muon": True},
             {"params": adam_params, "use_muon": False},

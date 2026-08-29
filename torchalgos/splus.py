@@ -29,6 +29,8 @@ class SPlus(Optimizer):
         precond_freq: frequency of updating eigenbasis, default 10.
         solver: how to update eigenbasis, eigendecomposition or subspace iteration.
         power_iters: number of subspace iterations per eigenbasis update, 1 is enough in most cases, only has effect for subspace iteration. default 1.
+        pogo_lr: learning rate for POGO for basis updates. defaut 1.0.
+        pogo_steps: number of POGO steps per basis updates. default 1.
         max_dim: won't precondition dims larger than this. Defaults to 4096.
         merge_dims: whether to merge small dimensions, default True.
         merge_whitelist: if specified, only specified dimensions can be merged. Defaults to None.
@@ -58,8 +60,10 @@ class SPlus(Optimizer):
         nonstandard_constant: float = 0.001,
         weight_decay: float = 1e-2,
         precond_freq: float = 100,
-        solver: Literal["subspace", "eigh"] = "eigh",
+        solver: Literal["subspace", "eigh", 'pogo'] = "eigh",
         power_iters: int = 1,
+        pogo_lr: float = 1.0,
+        pogo_steps: int = 1,
         max_dim: int = 4096,
         merge_dims: bool = False,
         merge_whitelist: int | list[int] | None = None,
@@ -82,6 +86,8 @@ class SPlus(Optimizer):
             weight_decay = weight_decay,
             precond_freq = precond_freq,
             power_iters = power_iters,
+            pogo_lr = pogo_lr,
+            pogo_steps = pogo_steps,
             max_dim = max_dim,
             merge_dims = merge_dims,
             merge_whitelist = merge_whitelist,
@@ -246,6 +252,8 @@ class SPlus(Optimizer):
                         grads = grad_buffers,
                         diags = (),
                         solver = group["solver"],
+                        pogo_lr = group["pogo_lr"],
+                        pogo_steps = group["pogo_steps"],
                     )
                     if "exp_avg" in state:
                         state["exp_avg"] = diags[0]

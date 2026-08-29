@@ -7,7 +7,7 @@ from typing import Any, Literal
 import torch
 from torch.optim import Optimizer
 
-from torchalgos import kron_utils, opt_utils
+from torchalgos import kron_utils, opt_utils, pogo
 
 EIGH_FN = torch.linalg.eigh # can swap to something from https://www.gpumode.com/leaderboard/775?tab=rankings
 QR_FN = torch.linalg.qr
@@ -92,63 +92,71 @@ def initialize_eigenbasis(accumulators: Sequence[torch.Tensor | None]):
     return Qs
 
 # pylint:disable=not-callable
+
 def update_eigenbasis(
     power_iters: int,
     accumulators: Sequence[torch.Tensor | None],
     Qs: Sequence[torch.Tensor | None],
     grads: Sequence[torch.Tensor],
     diags: Sequence[torch.Tensor],
-    solver: Literal["subspace", "eigh"],
+    solver: Literal["subspace", "eigh", "pogo"],
+    pogo_lr: float = 0.1,
+    pogo_steps: int = 1,
 ):
     assert not isinstance(grads, torch.Tensor)
     assert not isinstance(diags, torch.Tensor)
 
-    # Unproject grad-like buffers with current Q to reproject to new Q
+    # Unproject buffers with current Q to reproject to new Q
     grads = project_back(grads, Qs)
 
     for i, (acc, Q) in enumerate(zip(accumulators, Qs, strict=True)):
-
         if acc is None:
-
             if len(grads) > 0 and len(diags) > 0:
                 ndim = grads[0].ndim if len(grads) > 0 else diags[0].ndim
                 permute_order = list(range(1, ndim)) + [0]
                 grads = [g.permute(permute_order) for g in grads]
                 diags = [d.permute(permute_order) for d in diags]
-
             continue
 
         assert Q is not None
+        dtype = Q.dtype
 
         if solver == "subspace":
-
-            # Power iterations
             power_iter = acc
             for _ in range(power_iters):
                 power_iter = power_iter @ Q
-
-            # Reorthogonalize
-            dtype = power_iter.dtype
             if torch.finfo(dtype).eps > 1e-7:
                 power_iter = power_iter.to(torch.float32)
-
             try:
                 Q_new, _ = QR_FN(power_iter)
-
             except torch.linalg.LinAlgError:
-                # reinitialize to random matrix if QR failed
                 Q_new, _ = QR_FN(torch.randn_like(Q))
-
             Q_new = Q_new.to(dtype=dtype)
 
         elif solver == "eigh":
-
             try:
                 _, Q_new = EIGH_FN(acc)
-
+                Q_new = Q_new.flip(1)
             except torch.linalg.LinAlgError:
-                # reinitialize to random matrix if eigh failed
                 Q_new, _ = QR_FN(torch.randn_like(Q))
+            Q_new = Q_new.to(dtype=dtype)
+
+        elif solver == "pogo":
+            n = acc.shape[0]
+            D = torch.linspace(1.0, 0.1, n, device=acc.device, dtype=acc.dtype).unsqueeze(0)
+
+            Q_curr = Q.clone()
+            norm_factor = acc.norm().clamp_min(1e-8)
+            acc_normalized = acc / norm_factor
+
+            for _ in range(pogo_steps):
+                G = -2.0 * (acc_normalized @ (Q_curr * D))
+                Q_curr = pogo.pogo_step(Q_curr, G, lr=pogo_lr)
+
+            Q_new = Q_curr.to(dtype=dtype)
+
+        else:
+            raise ValueError(f"Unknown solver: {solver}")
 
         # Reproject buffers
         grads = [torch.tensordot(g, Q_new, dims=[[0], [0]]) for g in grads] # pyright:ignore[reportArgumentType]
@@ -157,10 +165,9 @@ def update_eigenbasis(
             C_sq = (Q_new.T @ Q) ** 2
             diags = [torch.tensordot(d, C_sq, dims=[[0], [0]]) for d in diags] # pyright:ignore[reportArgumentType]
 
-        Qs[i].set_(Q_new) # pyright:ignore[reportOptionalMemberAccess]
+        Qs[i].set_(Q_new) # pyright:ignore[reportOptionalMemberAccess,reportArgumentType]
 
     return Qs, grads, diags
-
 
 class SOAP(Optimizer):
     """
@@ -181,8 +188,10 @@ class SOAP(Optimizer):
         eps: clips Adam's denominator below this value. Defaults to 1e-8.
         weight_decay: decoupled weight decay, NOT decoupled from learning rate. Defaults to 0.01.
         precond_freq: frequency of updating eigenbasis, default 10.
-        solver: how to update eigenbasis, eigendecomposition or subspace iteration.
+        solver: how to update eigenbasis, eigendecomposition, subspace iteration, or POGO.
         power_iters: performs this many power iterations before reorthogonalizing via QR per eigenbasis update. default 2.
+        pogo_lr: learning rate for POGO for basis updates. defaut 1.0.
+        pogo_steps: number of POGO steps per basis updates. default 1.
         max_dim: won't precondition dims larger than this. Defaults to 4096.
         merge_dims: whether to merge small dimensions, default False.
         merge_whitelist: if specified, only specified dimensions can be merged. Defaults to None.
@@ -208,8 +217,10 @@ class SOAP(Optimizer):
         weight_decay: float = 0.01,
         ema_rate: float = 0.0,
         precond_freq: float = 10,
-        solver: Literal["subspace", "eigh"] = "subspace",
+        solver: Literal["subspace", "eigh", 'pogo'] = "pogo",
         power_iters: int = 2,
+        pogo_lr: float = 1.0,
+        pogo_steps: int = 1,
         max_dim: int = 4096,
         merge_dims: bool = False,
         merge_whitelist: int | list[int] | None = None,
@@ -236,6 +247,8 @@ class SOAP(Optimizer):
             ema_rate = ema_rate,
             precond_freq = precond_freq,
             power_iters = power_iters,
+            pogo_lr = pogo_lr,
+            pogo_steps = pogo_steps,
             max_dim = max_dim,
             merge_dims = merge_dims,
             merge_whitelist = merge_whitelist,
@@ -393,6 +406,8 @@ class SOAP(Optimizer):
                         grads = (state["exp_avg"], ),
                         diags = (state["exp_avg_sq"], ),
                         solver = group["solver"],
+                        pogo_lr = group["pogo_lr"],
+                        pogo_steps = group["pogo_steps"],
                     )
 
                 state["step"] += 1
@@ -405,10 +420,10 @@ class SOAP(Optimizer):
                     updates_ = updates,
                     metric = group["gtue_metric"],
                     beta = group["gtue_beta"],
-                    max_metric_growth=group["gtue_max_metric_growth"],
-                    min_metric=group["gtue_min_metric"],
-                    eps=group["eps"],
-                    mode=group["gtue_mode"],
+                    max_metric_growth = group["gtue_max_metric_growth"],
+                    min_metric = group["gtue_min_metric"],
+                    eps = group["eps"],
+                    mode = group["gtue_mode"],
                 )
 
             # ----------------------------- update parameters ---------------------------- #
