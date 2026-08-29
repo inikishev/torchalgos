@@ -1,20 +1,22 @@
 <h1 align='center'>Torchalgos</h1>
 
-This implements SOAP, SPlus with modifications to improve them, and a bunch of experimental optimizers.
+This implements SOAP, SPlus with multiple improvements, and a bunch of experimental optimizers.
+
+They are used as any other pytorch optimizer but if you use weight averaging, call `optimizer.train()` and `optimizer.eval()` alongside `model.train()` and `model.eval()`.
 
 ```py
 from torchalgos import SOAP
 
 opt = SOAP(
     # you can pass `model.parameters()`
-    # but pass `model` to automatically disable preconditioning for embeddings
+    # but pass `model` to automatically use Adam for embeddings
     model,
     lr=3e-3,
     ema_rate=0.999, # use weight averaging (big free boost to val score)
 )
 
 model.train()
-opt.train() # use this if you enabled weight averaging, it switches between train params and the EMA
+opt.train() # use this if set ema_rate, it switches train params and EMA
 
 for inputs, targets in dl_train:
     preds = model(inputs)
@@ -24,8 +26,9 @@ for inputs, targets in dl_train:
     opt.step()
 
 model.eval()
-opt.eval()
-# do test epoch here after calling opt.eval() to switch to averaged weights
+opt.eval() # switches to averaged weights
+
+# ... test epoch after calling opt.eval()
 ```
 
 ## Implemented optimizers
@@ -38,7 +41,7 @@ Runs Adam in Shampoo's eigenbasis. We use POGO (<https://github.com/adrianjav/po
 
 We also have grafting to update EMA enabled by default which usually makes SOAP more stable and faster to train.
 
-1d params are preconditiond by default. For big model you can disable this to use much less memory. You can also choose which dims to precondition, for example:
+1d params are preconditiond by default. For big model you can disable this (use Adam for them) to use much less memory. You can also choose which dims to precondition, for example:
 
 ```py
 opt = SOAP(model, lr=3e-3, precondition_1d=False, precond_dims=-2)
@@ -56,7 +59,7 @@ Projects gradient EMA to Shampoo's eigenbasis, takes it's sign and unprojects. C
 
 This is an optimizer I have devised that beats SOAP and SPlus in many benchmarks. It projects gradients to Shampoo's eigenbasis, computes a clamped reciprocal of their cautious EMA and unprojects.
 
-```
+```py
 from torchalgos.experimental import RePlus
 
 opt = RePlus(model, lr=3e-3, shampoo_beta=0.95) # try shampoo_beta=0.95 and 0.0
@@ -66,4 +69,4 @@ For more info and benchmarks: https://github.com/inikishev/torchalgos/blob/main/
 
 ### Other optimizers
 
-There are also a whole bunch of my other experiments, you probably shouldn't use them because they aren't that good.
+There are also a whole bunch of my other experiments, you probably shouldn't use them because they aren't that good (though might need to tune defaults and they might not be as bad).

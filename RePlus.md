@@ -50,8 +50,4 @@ I tune learning rates for all optimizers for a fair comparison, and also run for
 <img width="3486" height="832" alt="image" src="https://github.com/user-attachments/assets/ca8c2870-a397-4d0a-92a7-59bc425cf5d6" />
 
 
-**Note: no idea if it works well on bigger models. I might test when I'm not too lazy. (update I tried but I dont have enough VRAM so...)**
-
-## Reasoning behind the update rule
-
-There was none.
+**Note: no idea if it works well on bigger models. I might test when I'm not too lazy. But I also tried TrOCR-base and I don't have enough VRAM for even one sided SPlus so I can't really test it.**
