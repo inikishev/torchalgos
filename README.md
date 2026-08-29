@@ -1,31 +1,20 @@
-# RePlus
+<h1 align='center'>Torchalgos</h1>
 
-RePlus is SPlus but uses reciprocal instead of sign, and tracks cautious momentum in projected space.
-
-Here is what it does.
-
-1. projects gradients to shampoo's eigenbasis;
-2. updates EMA of projected gradients;
-3. takes that EMA, clips magnitudes to (0.01, 10), and takes their reciprocals;
-4. unprojects resulting update;
-5. tracks EMA of resulting updates, the update is grafted to that EMA for stability. This prevents the update from changing norm quickly.
-6. tracks EMA of model weights. This always improves test loss in my experiments, though RePlus also outperforms SPlus when weight EMA is disabled in both.
-
-## Usage example
+This implements SOAP, SPlus with modifications to improve them, and a bunch of experimental optimizers.
 
 ```py
-from torchalgos.experimental import RePlus
+from torchalgos import SOAP
 
-opt = RePlus(
+opt = SOAP(
     # you can pass `model.parameters()`
     # but pass `model` to automatically disable preconditioning for embeddings
     model,
     lr=3e-3,
-    shampoo_beta=0.95 # try 0.95 and 0.0
+    ema_rate=0.999, # use weight averaging (big free boost to val score)
 )
 
 model.train()
-opt.train() # this is important for RePlus, it switches between train params and weight EMAs
+opt.train() # use this if you enabled weight averaging, it switches between train params and the EMA
 
 for inputs, targets in dl_train:
     preds = model(inputs)
@@ -36,39 +25,45 @@ for inputs, targets in dl_train:
 
 model.eval()
 opt.eval()
-# do test epoch here
+# do test epoch here after calling opt.eval() to switch to averaged weights
 ```
 
-## Benchmarks
+## Implemented optimizers
 
-I tune learning rates for all optimizers for a fair comparison, and also run for a relatively large number of steps, so running benchmarks takes a while, so to keep times realistic I benchmark on mini-batch training of 3 tiny mnist1d models - MLP, RNN and ConvNet. It beats all other opts on MLP and RNN with `shampoo_beta=0.95`, and RNN and ConvNet with `shampoo_beta=0`. Though with `shampoo_beta=0` it's clearly unstable as seen by the jagged learning rate search curve.
+### SOAP
 
-<img width="3520" height="835" alt="image" src="https://github.com/user-attachments/assets/36d1351b-6b6b-4790-900c-06f2b9f81586" />
+<https://arxiv.org/abs/2409.11321>
 
-<img width="3486" height="839" alt="image" src="https://github.com/user-attachments/assets/1de47c15-101c-4ab6-bc1a-3fbe749a2437" />
+Runs Adam in Shampoo's eigenbasis. We use POGO (<https://github.com/adrianjav/pogo>) by default to track the eigenbasis without any decompositions. But you can switch to subspace iteration or eigendecomposition.
 
-<img width="3486" height="832" alt="image" src="https://github.com/user-attachments/assets/ca8c2870-a397-4d0a-92a7-59bc425cf5d6" />
+We also have grafting to update EMA enabled by default which usually makes SOAP more stable and faster to train.
 
-The curves look weird, that's because this is a weird optimizer. Taking the reciprocal makes it go along the walls of the valley, rather than along the floor. Look at the way it minimizes nesterov's piecewise rosenbrock (which is btw a hard function and many opts fail to minimize it):
+1d params are preconditiond by default. For big model you can disable this to use much less memory. You can also choose which dims to precondition, for example:
 
-<img width="1560" height="1392" alt="image" src="https://github.com/user-attachments/assets/583e8fe2-3615-49ad-a470-98751eee65cd" />
+```py
+opt = SOAP(model, lr=3e-3, precondition_1d=False, precond_dims=-2)
+```
 
-**Note: it might not scale to bigger models. Its a weird optimizer and it's unpredictable what would happen with other models. I might test when I'm not too lazy.**
+-2 is second to last dim which is the output dim on linear and conv weights, which works well and uses less memory.
 
-## Reasoning behind the update rule
+### SPlus
 
-This is a very old idea I had that you should make small careful steps when gradient is big or you end up somewhere completely different, and big steps when gradient is small because otherwise you will make too little progress. It's a pretty stupid idea and doesn't really work, but I tried it inside Shampoo's eigenbasis and it ended up behaving in a way that somehow actually works well.
+https://arxiv.org/abs/2506.07254
 
-I suspect that it works well because it goes all over the place which somehow acts as a regularizer.
+Projects gradient EMA to Shampoo's eigenbasis, takes it's sign and unprojects. Canonical SPlus only applies to 2D params (linears) whereas we apply it to all tensors by default like Shampoo. Like SOAP, you can choose `precond_dims` and `precondition_1d` to save some memory. SPlus has `ema_rate=0.999` by default as per the paper.
 
-# Other optimizers
+### RePlus
 
-This also implements other optimizers implemented here, SOAP and SPlus are very good implementations and thoroughly tested by way of me always using them when I train models. Feel free to use them.
+This is an optimizer I have devised that beats SOAP and SPlus in many benchmarks. It projects gradients to Shampoo's eigenbasis, computes a clamped reciprocal of their cautious EMA and unprojects.
 
-There are also a whole bunch of my other experiments and most of them suck so you probably shouldn't use them.
+```
+from torchalgos.experimental import RePlus
 
-# References
+opt = RePlus(model, lr=3e-3, shampoo_beta=0.95) # try shampoo_beta=0.95 and 0.0
+# use opt.train() and opt.eval() with model.train() and model.eval()
+```
+For more info and benchmarks: https://github.com/inikishev/torchalgos/blob/main/RePlus.md
 
-- soap https://arxiv.org/abs/2409.11321
-- splus https://arxiv.org/abs/2506.07254
-- pogo https://arxiv.org/html/2602.14656v2, https://github.com/adrianjav/pogo (we use code from this repo for pogo update formula)
+### Other optimizers
+
+There are also a whole bunch of my other experiments, you probably shouldn't use them because they aren't that good.
