@@ -146,7 +146,7 @@ class Muon(torch.optim.Optimizer):
                     use_muon = sum(1 for d in param.shape if d > 1) >= 2
 
                 if use_muon:
-                    if param.ndim != 2: raise RuntimeError(f"Can't use muon on param of shape {param.shape}")
+                    if param.ndim < 2: raise RuntimeError(f"Can't use muon on param of shape {param.shape}")
                     muon_params.append(param)
                     muon_grads.append(param.grad)
 
