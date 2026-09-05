@@ -143,7 +143,7 @@ class Muon(torch.optim.Optimizer):
 
                 use_muon = group["use_muon"]
                 if use_muon == 'auto':
-                    use_muon = sum(1 for d in param.shape if d > 1) >= 2
+                    use_muon = param.ndim >= 2 and min(param.shape[-2:]) > 1
 
                 if use_muon:
                     if param.ndim < 2: raise RuntimeError(f"Can't use muon on param of shape {param.shape}")
