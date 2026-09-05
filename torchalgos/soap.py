@@ -16,11 +16,13 @@ def update_accumulators_(
     grad: torch.Tensor,
     accumulators_: Sequence[torch.Tensor | None],
     shampoo_beta: float,
+    vec2: torch.Tensor | None = None,
 ):
-    for ind, acc in enumerate(accumulators_):
+    for i, acc in enumerate(accumulators_):
         if acc is None: continue
-        g = grad.movedim(ind, 0).reshape(grad.shape[ind], -1) # (shape[i], batch)
-        acc.lerp_(g @ g.T, 1-shampoo_beta)
+        c1 = grad.movedim(i, 0).reshape(grad.shape[i], -1) # (shape[i], batch)
+        c2 = c1 if vec2 is None else vec2.movedim(i, 0).reshape(vec2.shape[i], -1)
+        acc.lerp_(c1 @ c2.T, 1-shampoo_beta)
 
 
 def project(tensors: Sequence[torch.Tensor], Qs: Sequence[torch.Tensor | None]):
@@ -100,7 +102,7 @@ def update_eigenbasis(
     grads: Sequence[torch.Tensor],
     diags: Sequence[torch.Tensor],
     solver: Literal["subspace", "eigh", "pogo"],
-    pogo_lr: float = 0.1,
+    pogo_lr: float = 1.0,
     pogo_steps: int = 1,
 ):
     assert not isinstance(grads, torch.Tensor)
@@ -233,10 +235,11 @@ class SOAP(Optimizer):
         gtue_beta: float = 0.99,
         gtue_max_metric_growth: float | None = 1.5,
         gtue_min_metric: float = 1e-5,
+        gtue_max_metric: float | None = None,
         cautious: bool = False,
         mars_scale: float = 0,
-        max_norm: float | None = None,
-        max_norm_type: float | Literal["mad"] = 2,
+        max_grad_norm: float | None = None,
+        max_grad_norm_type: float | Literal["mad"] = 2,
     ):
         defaults = dict(
             lr = lr,
@@ -262,11 +265,11 @@ class SOAP(Optimizer):
             gtue_beta = gtue_beta,
             gtue_max_metric_growth = gtue_max_metric_growth,
             gtue_min_metric = gtue_min_metric,
+            gtue_max_metric = gtue_max_metric,
             cautious = cautious,
             mars_scale = mars_scale,
-            max_norm = max_norm,
-            max_norm_type = max_norm_type,
-
+            max_grad_norm = max_grad_norm,
+            max_grad_norm_type = max_grad_norm_type,
         )
 
         if isinstance(params, torch.nn.Module):
@@ -351,8 +354,8 @@ class SOAP(Optimizer):
             if group["mars_scale"]  != 0:
                 grads_proj = opt_utils.mars_correction_(grads_proj, grads_prev, group["betas"][0], group["mars_scale"])
 
-            if group["max_norm"] is not None:
-                opt_utils.clip_norm_(grads_proj, max_norm=group["max_norm"], metric=group["max_norm_type"])
+            if group["max_grad_norm"] is not None:
+                opt_utils.clip_norm_(grads_proj, max_norm=group["max_grad_norm"], metric=group["max_grad_norm_type"])
 
             # v1 = v1 * beta + g * (1-beta)
             torch._foreach_lerp_(exp_avgs, grads_proj, weight=(1 - beta1))
@@ -422,6 +425,7 @@ class SOAP(Optimizer):
                     beta = group["gtue_beta"],
                     max_metric_growth = group["gtue_max_metric_growth"],
                     min_metric = group["gtue_min_metric"],
+                    max_metric=group['gtue_max_metric'],
                     eps = group["eps"],
                     mode = group["gtue_mode"],
                 )

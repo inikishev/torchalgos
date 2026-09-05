@@ -109,7 +109,7 @@ class CustomSPlus(Optimizer):
                     state["accumulators"] = soap.initialize_accumulators(
                         grad, precond_dims=group["precond_dims"], precondition_1d=group["precondition_1d"], max_dim=group["max_dim"])
 
-                    custom_soap.update_accumulators_op_(grad, state["accumulators"], group["shampoo_beta"],
+                    custom_soap.update_accumulators_op_(grad, grad, state["accumulators"], group["shampoo_beta"],
                                                         operation=group["operation"], reduce=group["reduce"],
                                                         copysign=group["copysign"], update_fn=group["update_fn"])
 
@@ -189,7 +189,7 @@ class CustomSPlus(Optimizer):
 
                 # ---------------------------- update accumulators --------------------------- #
                 # Update is done after the gradient step to avoid using current gradients in the projection.
-                custom_soap.update_accumulators_op_(grad, state["accumulators"], group["shampoo_beta"],
+                custom_soap.update_accumulators_op_(grad, grad, state["accumulators"], group["shampoo_beta"],
                                                     operation=group["operation"], reduce=group["reduce"],
                                                     copysign=group["copysign"], update_fn=group["update_fn"])
 

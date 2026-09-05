@@ -25,6 +25,7 @@ def graft_to_update_ema_(
     beta: float,
     max_metric_growth: float | None,
     min_metric: float,
+    max_metric: float | None,
     eps: float,
     mode: Literal["clip", "normalize"],
 ):
@@ -58,6 +59,8 @@ def graft_to_update_ema_(
         # compute max allowed metric (prev metric * max growth)
         u_allowed_metric = torch._foreach_mul(u_ema_metric_prev, max_metric_growth)
         torch._foreach_clamp_min_(u_allowed_metric, min_metric)
+        if max_metric is not None:
+            torch._foreach_clamp_max_(u_allowed_metric, max_metric)
 
         # clip growth
         nums = []

@@ -32,7 +32,6 @@ def apply_factors(tensor: torch.Tensor, factors: list[torch.Tensor | None], tran
 
     return tensor
 
-
 class KronCBFGS(Optimizer):
     def __init__(
         self,
@@ -241,7 +240,6 @@ class KFSRC(Optimizer):
         gtue_min_metric: float = 1e-5,
         cautious: bool = False,
     ):
-        # ... (initialization stays mostly the same)
         defaults = dict(
             lr=lr,
             betas=betas,
@@ -394,28 +392,6 @@ class KFSRC(Optimizer):
             torch._foreach_sub_(params_with_grad, updates)
 
         return loss
-
-
-
-def apply_factors(tensor: torch.Tensor, factors: list[torch.Tensor | None], transpose: bool):
-    """
-    Applies the Kronecker-factored preconditioner to the tensor.
-    If transpose is True, applies S^T. Otherwise, applies S.
-    The tensor's shape is preserved through cyclic permutations.
-    """
-    if tensor.ndim == 0 or len(factors) == 0:
-        return tensor
-
-    for S in factors:
-        if S is None:
-            # Cycle dimensions to the left
-            permute_order = list(range(1, tensor.ndim)) + [0]
-            tensor = tensor.permute(permute_order)
-        else:
-            dim_S = 0 if transpose else 1
-            tensor = torch.tensordot(tensor, S, dims=[[0], [dim_S]])
-
-    return tensor
 
 
 class KFSRCV2(Optimizer):

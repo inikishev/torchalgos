@@ -65,7 +65,7 @@ class DecoupleSVD(torch.optim.Optimizer):
         opt_Vh: Callable[[list[torch.Tensor]], torch.optim.Optimizer],
         opt_dir: Callable[[list[torch.Tensor]], torch.optim.Optimizer],
         opt_magn: Callable[[list[torch.Tensor]], torch.optim.Optimizer],
-        opt_coupled: Callable[[list[torch.Tensor]], torch.optim.Optimizer],
+        opt_coupled: Callable[[list[torch.Tensor]], torch.optim.Optimizer] | None = None,
         opt_ortho: Callable[[list[torch.Tensor]], torch.optim.Optimizer] | None = None,
         w_ortho: float = 0,
         eps: float | None = None,
@@ -192,6 +192,7 @@ class DecoupleSVD(torch.optim.Optimizer):
             self.opt_magn = self.opt_magn_fn(magn_list)
 
         if self.opt_coupled is None and len(coupled_params) > 0:
+            assert self.opt_coupled_fn is not None
             self.opt_coupled = self.opt_coupled_fn(coupled_params)
 
         # step with the optimizers

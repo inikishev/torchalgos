@@ -26,39 +26,7 @@ def update_accumulators_avg_(
 class GHSPlus(Optimizer):
     """Gaussian homotopy SPlus
 
-    this implementation is really, really, really, really bad
-
-    Args:
-        params: Iterable of tensors to optimize, or pass the model itself
-            which automatically uses diagonal preconditioner for embedding parameters.
-        lr: Learning rate. Defaults to 3e-3.
-        beta_unproj: Beta for momentum in unprojected space. Defaults to 0.9.
-        beta_proj: Beta for momentum in projected space. Defaults to 0.
-        beta_sign: Beta for momentum of the sign in projected space. Defaults to 0.
-        shampoo_beta: Beta for kronecker factored covariance accumulators. Defaults to (0.9, 0.999).
-        ema_rate: beta for exponential moving average of parameters.
-            Calling optimizer.eval() sets parameters to the EMA. Set to 0 to disable.
-        eps: clips Adam's denominator below this value. Defaults to 1e-8.
-        nonstandard_constant: Step size scale for parameters that aren't preconditioned.
-        weight_decay: decoupled weight decay, NOT decoupled from learning rate. Defaults to 0.01.
-        precond_freq: frequency of updating eigenbasis, default 10.
-        solver: how to update eigenbasis, eigendecomposition or subspace iteration.
-        power_iters: number of subspace iterations per eigenbasis update, 1 is enough in most cases, only has effect for subspace iteration. default 1.
-        max_dim: won't precondition dims larger than this. Defaults to 4096.
-        merge_dims: whether to merge small dimensions, default True.
-        merge_whitelist: if specified, only specified dimensions can be merged. Defaults to None.
-        merge_blacklist: prevents specified dimensions from being merged,
-            you should set this to 0 or 1 for channel-first weights like Linear and Conv,
-            and -1 or -2 for channel-last weights. Applies after whitelist. Defaults to 0.
-        precond_dims: dimensions to use kronecker preconditioner for,
-            note that if `merge_dims=True`, dimensions are specified after merging.
-            Set to None to use diagonal preconditioner, "all" to precondition all dimensions smaller than `max_dim`. Setting this to 1 for channel-first weights or -2 for channel-last weights
-            may be much faster than "all" but still have good performance.
-            You should set this to None on embeddings, or pass model as `params` to do that automatically.
-            Defaults to 'all'.
-        precondition_1d: whether to precondition 1d parameters, unlike the official implementation the default is True.
-        normalize: whether to normalize the updates. Defaults to False.
-    """
+    this implementation is really bad and is to be rewritten"""
     def __init__(
         self,
         params,

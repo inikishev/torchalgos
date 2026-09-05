@@ -1,4 +1,3 @@
-"""SOAP. https://github.com/inikishev/torchalgos"""
 from typing import Literal
 
 import torch
@@ -6,21 +5,9 @@ from torch.optim import Optimizer
 
 from torchalgos import kron_utils, soap
 
-def update_accumulators_asymmetric_(
-    s: torch.Tensor,
-    y: torch.Tensor,
-    accumulators_: list[torch.Tensor | None],
-    shampoo_beta: float,
-):
-    for i, acc in enumerate(accumulators_):
-        if acc is None: continue
 
-        axes = list(range(i)) + list(range(i + 1, s.ndim)) # this works fine with 1d params
-        acc.lerp_(torch.tensordot(s, y, (axes, axes)), 1-shampoo_beta) # pyright:ignore[reportArgumentType]
-
-
-class QSOAP(Optimizer):
-    """SOAP which accumulates and uses hessian estimate, doesn't seem any better than normal SOAP while being more expensive."""
+class DSOAP(Optimizer):
+    """SOAP with accumulator gradients replaced with an estimate which uses function values at two distant points, but it doesn't work well."""
     def __init__(
         self,
         params,
@@ -28,11 +15,12 @@ class QSOAP(Optimizer):
         betas = (0.95, 0.95),
         shampoo_beta: float = -1,
         eps: float = 1e-8,
+        damping: float = 1e-4,
         weight_decay: float = 0.01,
         update_freq: int = 4,
         precond_freq: int = 12,
-        inner_opt: Literal["Adam", "AdaHessian", "SophiaH"] = "SophiaH",
-        inner_clip: float = 1,
+        inner_cma: bool = False,
+        inner_clip: float = 1e5,
         solver: Literal["subspace", "eigh", "pogo"] = "pogo",
         power_iters: int = 1,
         max_dim: int = 4096,
@@ -50,10 +38,11 @@ class QSOAP(Optimizer):
             betas = betas,
             shampoo_beta = shampoo_beta,
             eps = eps,
+            damping = damping,
             weight_decay = weight_decay,
             update_freq = update_freq,
             precond_freq = precond_freq,
-            inner_opt = inner_opt,
+            inner_cma = inner_cma,
             inner_clip = inner_clip,
             power_iters = power_iters,
             max_dim = max_dim,
@@ -90,6 +79,8 @@ class QSOAP(Optimizer):
             (global_state["global_step"] % global_group["update_freq"] == 0) or
             (global_state["global_step"] <= global_group["warmup_steps"])
         )
+
+        f_prev = None
         if should_update:
             global_state["num_accs"] += 1
 
@@ -108,31 +99,27 @@ class QSOAP(Optimizer):
                     state["p_cur"] = param.clone()
                     param.copy_(state["p_prev"])
 
-            with torch.enable_grad():
-                closure()
+            f_prev = closure(False) # no gradient
 
             # Move back to current point
             for group in self.param_groups:
                 for param in group["params"]:
                     state = self.state[param]
-                    state["g_prev"] = param.grad.clone() if param.grad is not None else torch.zeros_like(param)
                     state["s"] = state["p_cur"] - state["p_prev"]
                     param.copy_(state["p_cur"])
                     state["p_prev"] = param.clone()
 
         with torch.enable_grad():
-            loss = closure()
-
+            f = closure()
 
         for group in self.param_groups:
 
+
             # collect all buffers for foreach operations
-            g_merged_list = []
-            g_prev_merged_list = []
-            s_merged_list = []
-            g_proj_list = []
-            g_prev_proj_list = []
-            s_proj_list = []
+            gs_merged = []
+            ests_merged = []
+            gs_proj = []
+            ests_proj = []
             v1s = []
             v2s = []
             params_with_grad = []
@@ -148,20 +135,23 @@ class QSOAP(Optimizer):
                 params_with_grad.append(param)
 
                 g = param.grad
-                s = state["s"]
-                g_prev = state["g_prev"]
+
+                if should_update:
+                    group["est"] = state["s"] * (abs(f - f_prev) + group["damping"])
+                    del state["s"]
+
+                est = group["est"]
 
                 if group["merge_dims"]: # merge small dims to get correct shapes
-                    (g, g_prev, s), *state["merge_state"] = kron_utils.merge_small_dims(
-                        [g, g_prev, s],
+                    (g, est), *state["merge_state"] = kron_utils.merge_small_dims(
+                        [g, est],
                         max_dim=group["max_dim"],
                         whitelist=group["merge_whitelist"],
                         blacklist=group["merge_blacklist"],
                     )
 
-                g_merged_list.append(g)
-                g_prev_merged_list.append(g_prev)
-                s_merged_list.append(s)
+                gs_merged.append(g)
+                ests_merged.append(est)
 
                 if "accumulators" not in state:
                     assert should_update
@@ -170,9 +160,10 @@ class QSOAP(Optimizer):
                     state["step"] = 1
 
                     state["accumulators"] = soap.initialize_accumulators(
-                        g, precond_dims=group["precond_dims"], precondition_1d=group["precondition_1d"], max_dim=group["max_dim"])
+                        g, precond_dims=group["precond_dims"],
+                        precondition_1d=group["precondition_1d"], max_dim=group["max_dim"])
 
-                    update_accumulators_asymmetric_(s, g - g_prev, state["accumulators"], shampoo_beta)
+                    soap.update_accumulators_(est, state["accumulators"], shampoo_beta)
 
                     state["Qs"] = soap.initialize_eigenbasis(state["accumulators"])
 
@@ -181,68 +172,36 @@ class QSOAP(Optimizer):
 
 
                 # ---------------------------------- Project --------------------------------- #
-                g_prev_proj = s_proj = None
                 (g_proj, ) = soap.project([g], state["Qs"])
-                if should_update:
-                    g_prev_proj, s_proj = soap.project([g_prev, s], state["Qs"])
+                gs_proj.append(g_proj)
 
-                g_proj_list.append(g_proj)
+                est_proj = None
+                if should_update and group["inner_cma"]:
+                    (est_proj, ) = soap.project([est], state["Qs"])
+                    ests_proj.append(est_proj)
+
                 v1s.append(state["v1"])
                 v2s.append(state["v2"])
-                if should_update:
-                    g_prev_proj_list.append(g_prev_proj)
-                    s_proj_list.append(s_proj)
 
 
             # --------------------------------- run inner opt --------------------------------- #
-            # v1 = v1 * beta + g * (1-beta)
-            torch._foreach_lerp_(v1s, g_proj_list, weight=(1 - beta1))
-
-            if group["inner_opt"] == "Adam":
-                # v2 = v2 * beta + D² * (1-beta)
+            torch._foreach_lerp_(v1s, gs_proj, weight=(1 - beta1))
+            if group["inner_cma"]:
+                c = ests_proj if should_update else None
+            else:
+                c = gs_proj
+            if c is not None:
+                # v1 = v1 * beta + g * (1-beta)
+                # v2 = v2 * beta + g² * (1-beta)
                 torch._foreach_mul_(v2s, beta2)
-                torch._foreach_addcmul_(v2s, g_proj_list, g_proj_list, value=(1 - beta2))
+                torch._foreach_addcmul_(v2s, c, c, value=(1 - beta2))
                 # u = v1 / (sqrt(v2) + eps)
                 denom = torch._foreach_sqrt(v2s)
                 torch._foreach_clamp_min_(denom, group["eps"])
-
-            elif group["inner_opt"] == "AdaHessian":
-                if should_update:
-
-                    # D = s * y
-                    y = torch._foreach_sub(g_proj_list, g_prev_proj_list)
-                    D = torch._foreach_mul(y, s_proj_list)
-
-                    # v2 = v2 * beta + D² * (1-beta)
-                    torch._foreach_mul_(v2s, beta2)
-                    torch._foreach_addcmul_(v2s, D, D, value=(1 - beta2))
-
-                    # u = v1 / (sqrt(v2) + eps)
-                    denom = torch._foreach_sqrt(v2s)
-                    torch._foreach_clamp_min_(denom, group["eps"])
-                    for p, d in zip(params_with_grad, denom): self.state[p]["denom"] = d
-                else:
-                    denom = [self.state[p]["denom"] for p in params_with_grad]
-
-            elif group["inner_opt"] == "SophiaH":
-                if should_update:
-
-                    # D = s * y
-                    y = torch._foreach_sub(g_proj_list, g_prev_proj_list)
-                    D = torch._foreach_mul(y, s_proj_list)
-
-                    # v2 = v2 * beta + D * (1-beta)
-                    torch._foreach_lerp_(v2s, D, weight=(1 - beta2))
-
-                    # u = v1 / clip(D, min=eps)
-                    denom = torch._foreach_clamp_min(v2s, group["eps"])
-                    for p, d in zip(params_with_grad, denom): self.state[p]["denom"] = d
-                else:
-                    denom = [self.state[p]["denom"] for p in params_with_grad]
-
-
+                for p, d in zip(params_with_grad, denom): self.state[p]["denom"] = d
+                for p, d in zip(params_with_grad, denom): self.state[p]["denom"] = d
             else:
-                raise ValueError(group["inner_opt"])
+                denom = [self.state[p]["denom"] for p in params_with_grad]
 
             dirs_proj = torch._foreach_div(v1s, denom)
             torch._foreach_clamp_min_(dirs_proj, -group["inner_clip"])
@@ -251,8 +210,8 @@ class QSOAP(Optimizer):
             updates = []
             lrs = []
 
-            buffs = zip(params_with_grad, g_merged_list, g_prev_merged_list, s_merged_list, dirs_proj)
-            for param, g, g_prev, s, dir_proj in buffs:
+            buffs = zip(params_with_grad, gs_merged, ests_merged, dirs_proj)
+            for param, g, est, dir_proj in buffs:
 
                 state = self.state[param]
 
@@ -267,17 +226,11 @@ class QSOAP(Optimizer):
 
                 else:
                     bias_correction1 = 1.0 - beta1 ** state["step"]
-                    if group["inner_opt"] == "Adam":
-                        bias_correction2 = 1.0 - beta2 ** state["step"]
-                        lr = group["lr"] * (bias_correction2 ** 0.5) / bias_correction1
-                    elif group["inner_opt"] == "AdaHessian":
+                    if group["inner_cma"]:
                         bias_correction2 = 1.0 - beta2 ** global_state["num_accs"]
-                        lr = group["lr"] * (bias_correction2 ** 0.5) / bias_correction1
-                    elif group["inner_opt"] == "SophiaH":
-                        bias_correction2 = 1.0 - beta2 ** global_state["num_accs"]
-                        lr = group["lr"] * bias_correction2 / bias_correction1
                     else:
-                        raise ValueError(group["inner_opt"])
+                        bias_correction2 = 1.0 - beta2 ** state["step"]
+                    lr = group["lr"] * (bias_correction2 ** 0.5) / bias_correction1
 
                 updates.append(dir)
                 lrs.append(lr)
@@ -290,7 +243,7 @@ class QSOAP(Optimizer):
                 # ---------------------------- update accumulators --------------------------- #
                 # Update is done after the gradient step to avoid using current gradients in the projection.
                 if should_update:
-                    update_accumulators_asymmetric_(s, g - g_prev, state["accumulators"], shampoo_beta=shampoo_beta)
+                    soap.update_accumulators_(est, state["accumulators"], shampoo_beta=shampoo_beta)
 
                 if (
                     (state['step'] % group['precond_freq'] == 0) or
@@ -307,7 +260,6 @@ class QSOAP(Optimizer):
                         solver = group["solver"],
                     )
 
-
                 state["step"] += 1
 
             # ----------------------------- update parameters ---------------------------- #
@@ -320,5 +272,5 @@ class QSOAP(Optimizer):
             torch._foreach_mul_(updates, lrs)
             torch._foreach_sub_(group["params"], updates)
 
-        return loss
+        return f
 

@@ -36,6 +36,7 @@ class RePlus(Optimizer):
         ema_rate: float = 0.999,
         eps: float = 1e-8,
         nonstandard_constant: float = 0.001,
+        nonstandard_sign: bool = True,
         weight_decay: float = 1e-2,
         precond_freq: float = 100,
         solver: Literal["subspace", "eigh", 'pogo'] = "eigh",
@@ -52,8 +53,9 @@ class RePlus(Optimizer):
         gtue_mode: Literal["disabled", "clip", "normalize"] = "normalize",
         gtue_metric: float | Literal["mad"] = 2,
         gtue_beta: float = 0.99,
-        gtue_max_metric_growth: float | None = 1.5,
+        gtue_max_metric_growth: float | None = 1.1,
         gtue_min_metric: float = 1e-5,
+        gtue_max_metric: float | None = None,
         cautious: bool = True,
     ):
         defaults = dict(
@@ -69,6 +71,7 @@ class RePlus(Optimizer):
             ema_rate = ema_rate,
             eps = eps,
             nonstandard_constant = nonstandard_constant,
+            nonstandard_sign = nonstandard_sign,
             weight_decay = weight_decay,
             precond_freq = precond_freq,
             power_iters = power_iters,
@@ -87,6 +90,7 @@ class RePlus(Optimizer):
             gtue_beta = gtue_beta,
             gtue_max_metric_growth = gtue_max_metric_growth,
             gtue_min_metric = gtue_min_metric,
+            gtue_max_metric = gtue_max_metric,
             cautious = cautious,
         )
 
@@ -205,6 +209,10 @@ class RePlus(Optimizer):
 
                 state = self.state[param]
 
+                sum_precond = sum(acc.shape[0] for acc in state["accumulators"] if acc is not None)
+                if group['nonstandard_sign'] and (param.ndim == 0 or sum_precond == 0):
+                    dir_proj = dir_proj.sign()
+
                 # ------------------------------- project back ------------------------------- #
                 (dir, ) = soap.project_back((dir_proj, ), state["Qs"])
                 if group["merge_dims"]:
@@ -214,15 +222,11 @@ class RePlus(Optimizer):
                     # no step size scaling because update is normalized
                     lr = group["lr"] / dir.square().mean().sqrt().clip(min=group["eps"])
 
+                elif param.ndim == 0 or sum_precond == 0:
+                    lr = group["lr"] * group["nonstandard_constant"]
+
                 else:
-                    if param.ndim >= 1:
-                        sum_precond = sum(acc.shape[0] for acc in state["accumulators"] if acc is not None)
-                        if sum_precond == 0:
-                            lr = group["lr"] * group["nonstandard_constant"]
-                        else:
-                            lr = group["lr"] * 2 / sum_precond
-                    else:
-                        lr = group["lr"] * group["nonstandard_constant"]
+                    lr = group["lr"] * 2 / sum_precond
 
                 updates.append(dir)
                 lrs.append(lr)
@@ -272,6 +276,7 @@ class RePlus(Optimizer):
                     beta = group["gtue_beta"],
                     max_metric_growth=group["gtue_max_metric_growth"],
                     min_metric=group["gtue_min_metric"],
+                    max_metric=group["gtue_max_metric"],
                     eps=group["eps"],
                     mode=group["gtue_mode"],
                 )
