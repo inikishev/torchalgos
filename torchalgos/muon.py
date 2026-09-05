@@ -54,7 +54,6 @@ _NS_COEFFS = (
     (2.8366, -3.0525, 1.2012)
 )
 
-@torch.compile
 def zeropower_muon(G: torch.Tensor, coeffs=_NS_COEFFS) -> torch.Tensor:
     """
     Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
